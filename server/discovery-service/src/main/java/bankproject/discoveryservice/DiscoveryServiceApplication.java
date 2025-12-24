@@ -1,4 +1,4 @@
-package bankproject.discoveryservice;
+package main.java.bankproject.discoveryservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

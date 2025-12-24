@@ -40,20 +40,14 @@ public class WebSecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authz -> authz
-                        .requestMatchers("/api/v1/signup", "/api/v1/login", "/api/v1/otp",
-                                "/api/v1/user/forget-password",
-                                "/api/v1/user/reset-password/{token}", "/api/v1/user/auser",
-                                "/api/v1/resend-otp/{userId}",
-                                "/api/v1/user/mail")
-                        .permitAll()
+                        // ✅ AUTHENTICATION DISABLED - All endpoints permitAll
                         .anyRequest()
-                        .authenticated())
-                .exceptionHandling(exceptionHandling -> exceptionHandling
-                        .authenticationEntryPoint(authenticationEntryPoint))
+                        .permitAll())
                 .sessionManagement(sessionManagement -> sessionManagement
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
-        http.addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // ❌ JWT Filter disabled - No authentication checks
+        // http.addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

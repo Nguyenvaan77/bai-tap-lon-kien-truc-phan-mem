@@ -1,21 +1,107 @@
 version: '3.8'
 
 services:
-  # MySQL Database
-  mysql:
-    image: mysql:8.0
-    container_name: mysql-onlinebanking
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: onlinebanking
+  # ========== MESSAGE BROKER ==========
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq-broker
     ports:
-      - "3306:3306"
+      - "5672:5672" # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - onlinebanking-network
     volumes:
-      - mysql-data:/var/lib/mysql
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  # ========== DATABASES (Database per Service) ==========
+
+  mysql-auth:
+    image: mysql:8.0
+    container_name: mysql-auth
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 160220057a
+      MYSQL_DATABASE: db_auth
+      MYSQL_ROOT_HOST: '%'
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mysql-auth-data:/var/lib/mysql
     networks:
       - onlinebanking-network
 
-  # Eureka Discovery Service
+  mysql-customer:
+    image: mysql:8.0
+    container_name: mysql-customer
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 160220057a
+      MYSQL_DATABASE: db_customer
+      MYSQL_ROOT_HOST: '%'
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mysql-customer-data:/var/lib/mysql
+    networks:
+      - onlinebanking-network
+
+  mysql-account:
+    image: mysql:8.0
+    container_name: mysql-account
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 160220057a
+      MYSQL_DATABASE: db_account
+      MYSQL_ROOT_HOST: '%'
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mysql-account-data:/var/lib/mysql
+    networks:
+      - onlinebanking-network
+
+  mysql-notification:
+    image: mysql:8.0
+    container_name: mysql-notification
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 160220057a
+      MYSQL_DATABASE: db_notification
+      MYSQL_ROOT_HOST: '%'
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mysql-notification-data:/var/lib/mysql
+    networks:
+      - onlinebanking-network
+
+  # ========== MICROSERVICES ==========
+
   discovery-service:
     build:
       context: ./discovery-service
@@ -26,11 +112,16 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
     depends_on:
-      - mysql
+      rabbitmq:
+        condition: service_healthy
     networks:
       - onlinebanking-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8761/eureka/status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # API Gateway
   gateway-service:
     build:
       context: ./gateway-service
@@ -42,12 +133,11 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
     depends_on:
-      - discovery-service
-      - mysql
+      discovery-service:
+        condition: service_healthy
     networks:
       - onlinebanking-network
 
-  # Authentication Service
   authentication-service:
     build:
       context: ./authentication-service
@@ -58,16 +148,23 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/onlinebanking
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-auth:3306/db_auth
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATASOURCE_PASSWORD: 160220057a
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
     depends_on:
-      - discovery-service
-      - mysql
+      discovery-service:
+        condition: service_healthy
+      mysql-auth:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - onlinebanking-network
 
-  # Customer Service
   customer-service:
     build:
       context: ./customer-service
@@ -78,16 +175,23 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/onlinebanking
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-customer:3306/db_customer
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATASOURCE_PASSWORD: 160220057a
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
     depends_on:
-      - discovery-service
-      - mysql
+      discovery-service:
+        condition: service_healthy
+      mysql-customer:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - onlinebanking-network
 
-  # Account Service
   account-service:
     build:
       context: ./account-service
@@ -98,16 +202,23 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/onlinebanking
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-account:3306/db_account
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATASOURCE_PASSWORD: 160220057a
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
     depends_on:
-      - discovery-service
-      - mysql
+      discovery-service:
+        condition: service_healthy
+      mysql-account:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - onlinebanking-network
 
-  # Notification Service
   notification-service:
     build:
       context: ./notification-service
@@ -118,14 +229,38 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-notification:3306/db_notification
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 160220057a
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_MAIL_HOST: smtp.gmail.com
+      SPRING_MAIL_PORT: 587
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
     depends_on:
-      - discovery-service
+      discovery-service:
+        condition: service_healthy
+      mysql-notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - onlinebanking-network
 
 volumes:
-  mysql-data:
-
+  mysql-auth-data:
+    driver: local
+  mysql-customer-data:
+    driver: local
+  mysql-account-data:
+    driver: local
+  mysql-notification-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
 
 networks:
   onlinebanking-network:
