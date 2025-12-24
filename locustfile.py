@@ -2,7 +2,15 @@
 Locust Load Testing Configuration for Online Banking System
 
 This file defines HTTP load tests for the Spring Boot microservices system.
-All traffic goes through the API Gateway (default: http://host.docker.internal:8080).
+All traffic goes through the API Gateway.
+
+Network Configuration:
+----------------------
+- If Locust and backend are on the same Docker network: use service name (gateway-service:8080)
+- If Locust is on host: use localhost:8080
+- If Locust needs to reach host: use host.docker.internal:8080 (Windows/Mac)
+
+The host is automatically detected or can be set via LOCUST_HOST environment variable.
 
 User Scenarios:
 --------------
@@ -15,23 +23,13 @@ How to Run Locust:
 1. Using Docker Compose (recommended):
    docker compose -f docker-compose.locust.yml up
 
-2. Using Docker directly:
-   docker build -f Dockerfile.locust -t bank-locust .
-   docker run -p 8089:8089 bank-locust
-
-3. Using Locust directly (requires Python 3.11+):
-   pip install locust
-   locust -f locustfile.py --host http://localhost:8080
-
-4. Access Locust UI:
+2. Access Locust UI:
    Open browser to http://localhost:8089
 
-Locust UI provides latency statistics:
-- Median (50th percentile)
-- 95th percentile
-- 99th percentile
-- Failure rate
-- Requests per second
+3. Configure test:
+   - Number of users: e.g., 10
+   - Spawn rate: e.g., 2 users/second
+   - Host: Will use gateway-service:8080 automatically (or override in UI)
 
 Configuration:
 --------------
@@ -43,9 +41,13 @@ from locust import HttpUser, task, between
 import json
 import random
 import logging
+import os
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with more detail
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Test credentials - UPDATE THESE with valid test user credentials
@@ -77,6 +79,10 @@ class BaseUser(HttpUser):
         self.user_id = None
         self.accounts = []
         
+        # Log the base host URL for debugging
+        base_url = self.host or "http://gateway-service:8080"
+        logger.info(f"User starting with base URL: {base_url}")
+        
         # Select random credentials for this user
         creds = random.choice(TEST_CREDENTIALS)
         self.email = creds["email"]
@@ -96,13 +102,28 @@ class BaseUser(HttpUser):
                 "password": self.password
             }
             
+            # Build full URL for logging
+            login_url = f"{self.host}/api/v1/login"
+            logger.info(f"Attempting login to: {login_url} with email: {self.email}")
+            
             with self.client.post(
                 "/api/v1/login",
                 json=login_data,
                 name="Auth - Login",
                 catch_response=True
             ) as response:
-                if response.status_code == 200:
+                # Log full request details
+                final_url = f"{self.host}/api/v1/login"
+                status_code = response.status_code
+                logger.info(f"Login response - URL: {final_url}, Status: {status_code}")
+                
+                if status_code == 0:
+                    error_msg = "Connection failed - cannot reach backend. Check network configuration."
+                    logger.error(f"{error_msg} URL: {final_url}")
+                    response.failure(error_msg)
+                    return
+                
+                if status_code == 200:
                     try:
                         response_data = response.json()
                         self.token = response_data.get("jwtToken")
@@ -110,18 +131,23 @@ class BaseUser(HttpUser):
                         self.user_id = user_data.get("userId")
                         
                         if self.token and self.user_id:
-                            logger.info(f"Authentication successful for {self.email}")
+                            logger.info(f"Authentication successful for {self.email}, userId: {self.user_id}")
                             response.success()
                         else:
-                            logger.warning("Login successful but missing token or userId")
+                            logger.warning(f"Login successful but missing token or userId. Response: {response_data}")
                             response.failure("Missing token or userId in response")
                     except (json.JSONDecodeError, AttributeError) as e:
-                        logger.error(f"Failed to parse login response: {e}")
+                        logger.error(f"Failed to parse login response: {e}, Status: {status_code}")
                         response.failure(f"Invalid JSON response: {str(e)}")
-                elif response.status_code == 401:
-                    response.failure("Invalid credentials")
+                elif status_code == 401:
+                    logger.warning(f"Authentication failed - invalid credentials for {self.email}")
+                    response.failure("Invalid credentials (401)")
+                elif status_code == 404:
+                    logger.error(f"Login endpoint not found (404) - URL: {final_url}")
+                    response.failure("Login endpoint not found (404)")
                 else:
-                    response.failure(f"Login failed with status {response.status_code}")
+                    logger.error(f"Login failed with status {status_code} - URL: {final_url}")
+                    response.failure(f"Login failed with status {status_code}")
         except Exception as e:
             logger.error(f"Authentication error: {str(e)}")
     
@@ -146,6 +172,10 @@ class BaseUser(HttpUser):
         Returns:
             bool: True if response is valid
         """
+        if response.status_code == 0:
+            logger.error(f"Connection failed - Status 0 for URL")
+            return False
+            
         if response.status_code == 200:
             try:
                 data = response.json()
@@ -168,31 +198,48 @@ class BaseUser(HttpUser):
         Helper method to get user accounts and cache them.
         """
         if not self.user_id:
+            logger.warning("Cannot get accounts - user_id is None")
             return []
         
         if self.accounts:
             return self.accounts
         
         try:
+            url = f"/api/v1/account/user/{self.user_id}"
+            logger.info(f"Getting user accounts from: {self.host}{url}")
+            
             with self.client.get(
-                f"/api/v1/account/user/{self.user_id}",
+                url,
                 headers=self.get_headers(),
                 name="Account - Get User Accounts",
                 catch_response=True
             ) as response:
-                if response.status_code == 200:
+                final_url = f"{self.host}{url}"
+                status_code = response.status_code
+                logger.info(f"Get accounts response - URL: {final_url}, Status: {status_code}")
+                
+                if status_code == 0:
+                    response.failure("Connection failed - cannot reach backend")
+                    return []
+                    
+                if status_code == 200:
                     try:
                         self.accounts = response.json()
+                        logger.info(f"Retrieved {len(self.accounts)} accounts for user {self.user_id}")
                         response.success()
                         return self.accounts
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON response: {e}")
                         response.failure("Invalid JSON response")
-                elif response.status_code == 401:
+                elif status_code == 401:
+                    logger.warning("Unauthorized - token may be invalid")
                     response.failure("Unauthorized - token may be invalid")
-                elif response.status_code == 404:
+                elif status_code == 404:
+                    logger.warning(f"User not found (404) - URL: {final_url}")
                     response.failure("User not found")
                 else:
-                    response.failure(f"Unexpected status: {response.status_code}")
+                    logger.error(f"Unexpected status {status_code} - URL: {final_url}")
+                    response.failure(f"Unexpected status: {status_code}")
         except Exception as e:
             logger.error(f"Error getting user accounts: {e}")
         
@@ -220,23 +267,31 @@ class BrowseUser(BaseUser):
             account_no = account.get("accountno")
             
             if account_no:
+                url = f"/api/v1/account/{account_no}"
+                logger.info(f"Viewing account {account_no} from: {self.host}{url}")
+                
                 with self.client.get(
-                    f"/api/v1/account/{account_no}",
+                    url,
                     headers=self.get_headers(),
                     name="Account - View Account Details",
                     catch_response=True
                 ) as response:
-                    if response.status_code == 200:
+                    status_code = response.status_code
+                    logger.info(f"View account response - Status: {status_code}")
+                    
+                    if status_code == 0:
+                        response.failure("Connection failed")
+                    elif status_code == 200:
                         if self.validate_response(response):
                             response.success()
                         else:
                             response.failure("Invalid response data")
-                    elif response.status_code == 401:
+                    elif status_code == 401:
                         response.failure("Unauthorized")
-                    elif response.status_code == 404:
+                    elif status_code == 404:
                         response.failure("Account not found")
                     else:
-                        response.failure(f"Unexpected status: {response.status_code}")
+                        response.failure(f"Unexpected status: {status_code}")
         else:
             # If no accounts, just view user accounts endpoint
             self.get_user_accounts()
@@ -276,19 +331,27 @@ class ActiveUser(BaseUser):
                     "description": f"Test transfer from load test"
                 }
                 
+                url = "/api/v1/account/transfer"
+                logger.info(f"Transferring {transfer_amount} from {from_account_no} to {to_account_no}")
+                
                 with self.client.post(
-                    "/api/v1/account/transfer",
+                    url,
                     json=transfer_data,
                     headers=self.get_headers(),
                     name="Account - Transfer Money",
                     catch_response=True
                 ) as response:
-                    if response.status_code == 200:
+                    status_code = response.status_code
+                    logger.info(f"Transfer response - Status: {status_code}")
+                    
+                    if status_code == 0:
+                        response.failure("Connection failed")
+                    elif status_code == 200:
                         if self.validate_response(response, "transactionStatus"):
                             response.success()
                         else:
                             response.failure("Transfer did not succeed")
-                    elif response.status_code == 400:
+                    elif status_code == 400:
                         # Insufficient balance is a valid business error
                         try:
                             error_data = response.json()
@@ -298,10 +361,10 @@ class ActiveUser(BaseUser):
                                 response.failure(f"Bad request: {error_data}")
                         except:
                             response.failure("Bad request")
-                    elif response.status_code == 401:
+                    elif status_code == 401:
                         response.failure("Unauthorized")
                     else:
-                        response.failure(f"Unexpected status: {response.status_code}")
+                        response.failure(f"Unexpected status: {status_code}")
         else:
             # If not enough accounts, just view accounts
             self.get_user_accounts()
@@ -328,13 +391,21 @@ class HistoryUser(BaseUser):
             account_no = account.get("accountno")
             
             if account_no:
+                url = f"/api/v1/account/transactions/{account_no}"
+                logger.info(f"Viewing transaction history for account {account_no}")
+                
                 with self.client.get(
-                    f"/api/v1/account/transactions/{account_no}",
+                    url,
                     headers=self.get_headers(),
                     name="Account - View Transaction History",
                     catch_response=True
                 ) as response:
-                    if response.status_code == 200:
+                    status_code = response.status_code
+                    logger.info(f"Transaction history response - Status: {status_code}")
+                    
+                    if status_code == 0:
+                        response.failure("Connection failed")
+                    elif status_code == 200:
                         try:
                             transactions = response.json()
                             # Validate it's a list (transaction history)
@@ -344,22 +415,26 @@ class HistoryUser(BaseUser):
                                 response.failure("Invalid response format - expected list")
                         except json.JSONDecodeError:
                             response.failure("Invalid JSON response")
-                    elif response.status_code == 401:
+                    elif status_code == 401:
                         response.failure("Unauthorized")
-                    elif response.status_code == 404:
+                    elif status_code == 404:
                         response.failure("Account not found")
                     else:
-                        response.failure(f"Unexpected status: {response.status_code}")
+                        response.failure(f"Unexpected status: {status_code}")
         else:
             # If no accounts, try with a test account number
             test_account = random.choice(TEST_ACCOUNTS)
+            url = f"/api/v1/account/transactions/{test_account}"
+            logger.info(f"Viewing transaction history for test account {test_account}")
+            
             with self.client.get(
-                f"/api/v1/account/transactions/{test_account}",
+                url,
                 headers=self.get_headers(),
                 name="Account - View Transaction History",
                 catch_response=True
             ) as response:
-                if response.status_code in [200, 404]:  # 404 is acceptable if account doesn't exist
+                status_code = response.status_code
+                if status_code in [200, 404]:  # 404 is acceptable if account doesn't exist
                     response.success()
                 else:
-                    response.failure(f"Unexpected status: {response.status_code}")
+                    response.failure(f"Unexpected status: {status_code}")

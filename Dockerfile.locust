@@ -27,8 +27,11 @@ RUN pip install --no-cache-dir locust
 # Expose Locust web UI port
 EXPOSE 8089
 
-# Default command: Run Locust with host pointing to host machine's gateway
-# host.docker.internal allows the container to access services on the host
-# For Linux, you may need to add: --add-host=host.docker.internal:host-gateway
-CMD ["locust", "-f", "locustfile.py", "--host", "http://host.docker.internal:8080"]
+# Default command: Run Locust
+# Host will be set via environment variable or can be overridden in Locust UI
+# When on same Docker network, use: http://gateway-service:8080
+# When on host, use: http://localhost:8080
+# When accessing host from container, use: http://host.docker.internal:8080
+CMD ["locust", "-f", "locustfile.py"]
+
 
