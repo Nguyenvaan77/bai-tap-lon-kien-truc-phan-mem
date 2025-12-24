@@ -8,18 +8,22 @@ services:
     container_name: bank-locust
     ports:
       - "8089:8089"  # Locust web UI
-    networks:
-      - locust-network
+    # Enable access to host machine services
+    # host.docker.internal works on Windows/Mac by default
+    # For Linux, uncomment the extra_hosts section below
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Optional: Override host if testing different environment
     # command: locust -f locustfile.py --host http://your-gateway-url:8080
     restart: unless-stopped
-    # For Linux systems, you may need to add:
-    # extra_hosts:
-    #   - "host.docker.internal:host-gateway"
+    # If backend is in same docker network, use service name instead:
+    # networks:
+    #   - onlinebanking-network
 
-networks:
-  locust-network:
-    driver: bridge
+# If backend services are in a different docker-compose, you can connect to that network:
+# networks:
+#   onlinebanking-network:
+#     external: true
 
 # Future: Distributed Locust workers
 # Uncomment and configure when needed:
