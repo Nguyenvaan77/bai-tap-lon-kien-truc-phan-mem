@@ -1,21 +1,16 @@
 # Build stage
 FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /app
 
 # Install Maven
 RUN apk add --no-cache maven
 
-# Copy parent pom and shared-events first
-COPY pom.xml ./pom.xml
-COPY shared-events/pom.xml ./shared-events/pom.xml
-COPY shared-events/src ./shared-events/src
+WORKDIR /app
 
-# Copy gateway-service pom and source
-COPY gateway-service/pom.xml ./gateway-service/pom.xml
-COPY gateway-service/src ./gateway-service/src
+# Copy the entire server directory into /app
+COPY ./server/ .
 
-# Build the project
-RUN mvn clean package -DskipTests -f pom.xml -pl gateway-service -am
+# Build the gateway-service module
+RUN mvn clean package -DskipTests -pl gateway-service -am
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
