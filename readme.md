@@ -15,75 +15,75 @@ docker-compose up --build
 
 ```
 
-This will:
+# This will:
 
-Build all service JARs
+- Build all service JARs
 
-Start all MySQL databases
+- Start all MySQL databases
 
-Start RabbitMQ
+- Start RabbitMQ
 
-Start Eureka Discovery Service
+- Start Eureka Discovery Service
 
-Start the API Gateway
+- Start the API Gateway
 
-Start all microservices
-(Authentication, Customer, Account, Notification)
+- Start all microservices (Authentication, Customer, Account, Notification)
 
-Services will be available at:
+## Services will be available at:
 
-Gateway → http://localhost:8080
+# Gateway → http://localhost:8080
 
-Eureka Dashboard → http://localhost:8761
+# Eureka Dashboard → http://localhost:8761
 
-RabbitMQ UI → http://localhost:15672
+# RabbitMQ UI → http://localhost:15672
+
 (guest / guest)
 
 Service startup is dependency-aware. Each service waits until databases, RabbitMQ, and Eureka are healthy before launching.
 
-Load Testing with Locust
+## Load Testing with Locust
 
 This project includes Dockerized HTTP load testing using Locust, targeting the API Gateway.
 
-Quick Start
+# Quick Start
 
-Build the Locust image:
+- Build the Locust image:
 
 docker build -f Dockerfile.locust -t bank-locust .
 
-Run Locust:
+- Run Locust:
 
 docker run -p 8089:8089 bank-locust
 
-Or via Docker Compose:
+- Or via Docker Compose:
 
 docker compose -f docker-compose.locust.yml up
 
-Open the Locust UI:
+# Open the Locust UI:
 
 http://localhost:8089
 
 Configure:
 
-Users — number of concurrent virtual users
+- Users — number of concurrent virtual users
 
-Spawn rate — users started per second
+- Spawn rate — users started per second
 
-Host — defaults to http://host.docker.internal:8080
+- Host — defaults to http://host.docker.internal:8080
 
-Locust UI Metrics
+# Locust UI Metrics
 
-Median, 95th and 99th percentile latency
+- Median, 95th and 99th percentile latency
 
-Requests per second (RPS)
+- Requests per second (RPS)
 
-Failure rate
+- Failure rate
 
-Response-time distribution
+- Response-time distribution
 
-Real-time charts
+- Real-time charts
 
-Default Test Scenarios
+# Default Test Scenarios
 
 GET /api/v1/account/{accountNo} — account details
 
