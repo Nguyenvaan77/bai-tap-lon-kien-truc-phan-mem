@@ -1,0 +1,34 @@
+# Dockerfile for Locust Load Testing
+#
+# This Dockerfile creates a containerized Locust instance for load testing
+# the Online Banking microservices system.
+#
+# Build:
+#   docker build -f Dockerfile.locust -t bank-locust .
+#
+# Run:
+#   docker run -p 8089:8089 bank-locust
+#
+# Or use docker-compose.locust.yml:
+#   docker compose -f docker-compose.locust.yml up
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy the Locust test file
+COPY locustfile.py .
+
+# Install Locust
+# Using --no-cache-dir to reduce image size
+RUN pip install --no-cache-dir locust
+
+# Expose Locust web UI port
+EXPOSE 8089
+
+# Default command: Run Locust with host pointing to host machine's gateway
+# host.docker.internal allows the container to access services on the host
+# For Linux, you may need to add: --add-host=host.docker.internal:host-gateway
+CMD ["locust", "-f", "locustfile.py", "--host", "http://host.docker.internal:8080"]
+
