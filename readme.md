@@ -15,7 +15,7 @@ docker-compose up --build
 
 ```
 
-# This will:
+### This will:
 
 - Build all service JARs
 
@@ -31,11 +31,11 @@ docker-compose up --build
 
 ## Services will be available at:
 
-# Gateway → http://localhost:8080
+### Gateway → http://localhost:8080
 
-# Eureka Dashboard → http://localhost:8761
+### Eureka Dashboard → http://localhost:8761
 
-# RabbitMQ UI → http://localhost:15672
+### RabbitMQ UI → http://localhost:15672
 
 (guest / guest)
 
@@ -45,7 +45,7 @@ Service startup is dependency-aware. Each service waits until databases, RabbitM
 
 This project includes Dockerized HTTP load testing using Locust, targeting the API Gateway.
 
-# Quick Start
+### Quick Start
 
 - Build the Locust image:
 
@@ -59,7 +59,7 @@ docker run -p 8089:8089 bank-locust
 
 docker compose -f docker-compose.locust.yml up
 
-# Open the Locust UI:
+### Open the Locust UI:
 
 http://localhost:8089
 
@@ -71,7 +71,7 @@ Configure:
 
 - Host — defaults to http://host.docker.internal:8080
 
-# Locust UI Metrics
+### Locust UI Metrics
 
 - Median, 95th and 99th percentile latency
 
